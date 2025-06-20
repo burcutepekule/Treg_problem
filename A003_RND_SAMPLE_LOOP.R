@@ -38,7 +38,7 @@ scenarios_df = expand.grid(
   randomize_tregs = c(0,1)
 )
 
-t_max            = 1000
+t_max            = 5000
 num_realizations = 500000 
 
 # Initialize empty vectors
@@ -790,10 +790,11 @@ for (realization_ind in 1:num_realizations){
     longitudinal_df$sterile                       = sterile
     longitudinal_df$allow_tregs_to_do_their_job   = allow_tregs_to_do_their_job
     longitudinal_df$allow_tregs_to_suppress_cognate = allow_tregs_to_suppress_cognate
+    longitudinal_df$randomize_tregs                 = randomize_tregs
     
     # Optional: Reorder columns to have metadata first
     longitudinal_df = longitudinal_df %>%
-      select(t, realization_ind, sterile, allow_tregs_to_do_their_job, allow_tregs_to_suppress_cognate, everything())
+      select(t, realization_ind, sterile, allow_tregs_to_do_their_job, allow_tregs_to_suppress_cognate, randomize_tregs, everything())
     
     saveRDS(longitudinal_df, paste0(dir_name,'/dataframe_',realization_ind,'_',scenario_ind,'.rds'))
     print(paste0(dir_name,'/dataframe_',realization_ind,'_',scenario_ind,'.rds SAVED'))

@@ -39,7 +39,7 @@ file_info$filename = all_files
 # Filter complete sets
 complete_sets = file_info %>%
   dplyr::group_by(index) %>%
-  dplyr::filter(n() == 4 & all(1:4 %in% case)) %>%
+  dplyr::filter(n() == 8 & all(1:8 %in% case)) %>%
   dplyr::ungroup()
 
 # Read only those files that are part of complete sets
@@ -56,7 +56,7 @@ colnames_insert = c('epithelial_healthy','epithelial_inj_1','epithelial_inj_2','
                     'phagocyte_M2_L_0','phagocyte_M2_L_1','phagocyte_M2_L_2','phagocyte_M2_L_3','phagocyte_M2_L_4','phagocyte_M2_L_5',
                     'commensal','pathogen','treg_resting','treg_active','C_ROS','C_M0','C_M1','C_M2','P_ROS','P_M0','P_M1','P_M2')
 
-colnames(all_data)[6:36] = colnames_insert
+colnames(all_data)[7:37] = colnames_insert
 
 # all_data_complete = merge(all_data, parameters_df_in_data, by='realization_ind')
 
@@ -73,32 +73,33 @@ if(is.infinite(max_fig_index)){
 }
 
 for (ind in (1+max_fig_index):max(sort(unique(all_data$realization_ind)))){
+
   print(ind)
   realization_data = all_data %>% filter(realization_ind==ind)
   
-  p_epithelium = plot_faceted(realization_data, 
+  p_epithelium = plot_faceted_8(realization_data, 
                               c("epithelial_healthy", paste0("epithelial_inj_", 1:5)),
                               "Epithelial Cell Dynamics")
-  # p_resting    = plot_faceted(realization_data, 
+  # p_resting    = plot_faceted_8(realization_data, 
   #                             c("phagocyte_M0", "treg_resting"),
   #                             "M0 Phagocytes & Resting Tregs")
-  # p_M1         = plot_faceted(realization_data, 
+  # p_M1         = plot_faceted_8(realization_data, 
   #                             paste0("phagocyte_M1_L_", 0:5),
   #                             "M1 Phagocyte Levels")
-  # p_reg_active = plot_faceted(realization_data, 
+  # p_reg_active = plot_faceted_8(realization_data, 
   #                             c(paste0("phagocyte_M2_L_", 0:5), "treg_active"),
   #                             "M2 Phagocytes & Active Tregs")
-  # p_microbes   = plot_faceted(realization_data, c("commensal", "pathogen"),
+  # p_microbes   = plot_faceted_8(realization_data, c("commensal", "pathogen"),
   #                             "Microbe Dynamics")
-  # p_cum_com    = plot_faceted(realization_data, 
+  # p_cum_com    = plot_faceted_8(realization_data, 
   #                             c("C_ROS", "C_M0", "C_M1", "C_M2"),
   #                             "Cumulative Commensal Deaths")
-  # p_cum_path    = plot_faceted(realization_data, 
+  # p_cum_path    = plot_faceted_8(realization_data, 
   #                              c("P_ROS", "P_M0", "P_M1", "P_M2"),
   #                              "Cumulative Pathogen Deaths")
   
   # Save all 7 plots with realization_ind in filename
-  ggsave(paste0(dir_name,subdir_name,"/epithelium_", ind, ".png"), p_epithelium, dpi = 300, width = 8, height = 5)
+  ggsave(paste0(dir_name,subdir_name,"/epithelium_", ind, ".png"), p_epithelium, dpi = 300, width = 16, height = 10)
   # ggsave(paste0(dir_name,subdir_name,"/resting_tregs_", ind, ".png"), p_resting, dpi = 300, width = 8, height = 5)
   # ggsave(paste0(dir_name,subdir_name,"/phagocyte_M1_", ind, ".png"), p_M1, dpi = 300, width = 8, height = 5)
   # ggsave(paste0(dir_name,subdir_name,"/phagocyte_M2_activeTreg_", ind, ".png"), p_reg_active, dpi = 300, width = 8, height = 5)

@@ -86,6 +86,20 @@ plot_faceted = function(data, variables, title) {
   return(p)
 }
 
+plot_faceted_8 = function(data, variables, title) {
+  data_long = data %>%
+    dplyr::select(t, sterile, allow_tregs_to_do_their_job, randomize_tregs, all_of(variables)) %>%
+    pivot_longer(cols = all_of(variables), names_to = "variable", values_to = "value")
+  
+  p = ggplot(data_long, aes(x = t, y = value, color = variable)) +
+    geom_line(alpha = 1, linewidth = 1) +
+    facet_grid(sterile ~ allow_tregs_to_do_their_job + randomize_tregs, labeller = label_both) +
+    scale_color_manual(values = agent_colors) +
+    theme_minimal() +
+    labs(title = title, x = "Time", y = "Count", color = "Agent")
+  
+  return(p)
+}
 
 plot_grid_DAMPs <- function() {
   

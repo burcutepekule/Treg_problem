@@ -7,6 +7,7 @@ library(gridExtra)
 library(cowplot)
 library(grid)
 library(Rcpp)
+library(parallel)
 
 # start_time = proc.time()
 
@@ -35,10 +36,9 @@ placeholder = nullGrob()
 ##### NEED TO IMPLEMENT AGE FOR ALL CELLS! INCLUDING EPITHELIUM!
 #### HOW TO ATTRACT T CELLS TO DCS?
 
-t_max           = 5000
-plot_on         = 0
-plot_every      = 100 # plot_evey n frames
-randomize_tregs = 1
+t_max           = 500
+plot_on         = 1
+plot_every      = 1 # plot_evey n frames
 
 rate_leak_commensal_injury     = 0.50
 rate_leak_commensal_baseline   = 0.05
@@ -107,17 +107,18 @@ activity_ROS_M1_step      = (activity_ROS_max-activity_ROS_M1_baseline)/cc_phago
 scenarios_df = expand.grid(
   sterile = c(0, 1),
   allow_tregs_to_do_their_job = c(FALSE, TRUE),
-  allow_tregs_to_suppress_cognate = c(FALSE)
+  allow_tregs_to_suppress_cognate = c(FALSE),
+  randomize_tregs = c(0,1)
 )
 
-longitudinal_df_keep = c()
-
 for (scenario_ind in 1:nrow(scenarios_df)){
-  print(c(scenario_ind))
+  
+  longitudinal_df_keep = c()
   
   sterile                         = scenarios_df[scenario_ind,]$sterile
   allow_tregs_to_do_their_job     = scenarios_df[scenario_ind,]$allow_tregs_to_do_their_job
   allow_tregs_to_suppress_cognate = scenarios_df[scenario_ind,]$allow_tregs_to_suppress_cognate
+  randomize_tregs                 = scenarios_df[scenario_ind,]$randomize_tregs
   
   if(sterile==0){
     rate_leak_pathogen_injury      = 0.75
@@ -199,6 +200,7 @@ for (scenario_ind in 1:nrow(scenarios_df)){
   microbes_cumdeath_longitudinal = matrix(0,nrow=t_max, ncol=2*4) # first 4 columns commensals, second 4 columns pathogens - death by ROS, M0, M1, M2
   
   for (t in 1:t_max) {
+    print(c(scenario_ind,t))
     
     # Update injury site
     injury_site_updated = which(epithelium$level_injury>0)
@@ -398,7 +400,7 @@ for (scenario_ind in 1:nrow(scenarios_df)){
       source('./CONVERT_TO_DATAFRAME.R')
       p = plot_simtime_simple()
       ggsave(
-        paste0(dir_name,"/frame_seed_",seed_in,"_STERILE_",sterile,"_TREGS_",allow_tregs_to_do_their_job,"_COGNATE_",allow_tregs_to_suppress_cognate,"_",t,".png"),
+        paste0(dir_name,"/frame_seed_",seed_in,"_STERILE_",sterile,"_TREGS_",allow_tregs_to_do_their_job,"_trnd_",randomize_tregs,"_",t,".png"),
         plot = p,
         width = 12,
         height = 10,
@@ -732,58 +734,32 @@ for (scenario_ind in 1:nrow(scenarios_df)){
     select(t, sterile, allow_tregs_to_do_their_job, allow_tregs_to_suppress_cognate, everything())
   
   longitudinal_df_keep = rbind(longitudinal_df_keep, longitudinal_df)
+  
+  # Create pattern based on parameters
+  pattern = paste0("^frame_seed_\\d+_STERILE_", sterile, "_TREGS_", allow_tregs_to_do_their_job, "_trnd_", randomize_tregs, "_\\d+\\.png$")
+  
+  # Define file list and output
+  png_files = list.files(dir_name, full.names = TRUE, pattern = pattern)
+  # Sort files numerically by the time value (last number before .png)
+  png_files = png_files[order(as.numeric(gsub(".*_(\\d+)\\.png$", "\\1", png_files)))]
+  video_out = paste0(dir_name,"/simulation_sterile_", sterile, "_tregs_", allow_tregs_to_do_their_job, "_trnd_", randomize_tregs, ".mp4")
+  
+  library(av)
+  # Create video
+  av_encode_video(
+    input = png_files,
+    output = video_out,
+    framerate = 5, # slower playback (e.g. 2 FPS)
+    vfilter = "scale=1000:-2",  # Resize if needed
+    codec = "libx264"      # H.264 codec is widely supported
+  )
+  
+  # Create GIF version
+  gif_out = paste0(dir_name,"/simulation_sterile_", sterile_val, "_tregs", tregs_val, "_trnd", trnd_val, ".gif")
+  av_encode_video(
+    input = png_files,
+    output = gif_out,
+    framerate = 5,
+    vfilter = "scale=1000:-2,fps=2"  # Smaller size for GIF and set fps
+  )
 }
-
-
-colnames_insert = c('epithelial_healthy','epithelial_inj_1','epithelial_inj_2','epithelial_inj_3','epithelial_inj_4','epithelial_inj_5',
-                    'phagocyte_M0','phagocyte_M1_L_0','phagocyte_M1_L_1','phagocyte_M1_L_2','phagocyte_M1_L_3','phagocyte_M1_L_4','phagocyte_M1_L_5',
-                    'phagocyte_M2_L_0','phagocyte_M2_L_1','phagocyte_M2_L_2','phagocyte_M2_L_3','phagocyte_M2_L_4','phagocyte_M2_L_5',
-                    'commensal','pathogen','treg_resting','treg_active','C_ROS','C_M0','C_M1','C_M2','P_ROS','P_M0','P_M1','P_M2')
-
-colnames(longitudinal_df_keep)[5:35] = colnames_insert
-
-
-p_epithelium = plot_faceted(longitudinal_df_keep,
-                            c("epithelial_healthy", paste0("epithelial_inj_", 1:5)),
-                            "Epithelial Cell Dynamics")
-dir_name = './plots'
-dir.create(dir_name)
-
-print(p_epithelium)
-ggsave(
-  paste0(dir_name,"/frame_seed_",seed_in,"_STERILE_",sterile,"_TREGS_",allow_tregs_to_do_their_job,"_COGNATE_",allow_tregs_to_suppress_cognate,"_RND_TREGS_",randomize_tregs,"_epithelium.png"),
-  plot = p_epithelium,
-  width = 8,
-  height = 5,
-  dpi = 600,
-  bg = "white"  # =--- important to avoid black background in video
-)
-
-
-# p_pathogen = plot_faceted(longitudinal_df_keep, c("pathogen"), "Pathogen Abundance")
-# print(p_pathogen)
-# dir_name = './plots'
-# dir.create(dir_name)
-# ggsave(
-#   paste0(dir_name,"/frame_seed_",seed_in,"_STERILE_",sterile,"_TREGS_",allow_tregs_to_do_their_job,"_COGNATE_",allow_tregs_to_suppress_cognate,"_RND_TREGS_",randomize_tregs,"_pathogen.png"),
-#   plot = p_pathogen,
-#   width = 8,
-#   height = 5,
-#   dpi = 600,
-#   bg = "white"  # =--- important to avoid black background in video
-# )
-# 
-# 
-# p_phagocyte_m1 = plot_faceted(longitudinal_df_keep, c(paste0("phagocyte_M1_L_", 0:5)), "M1 Phagocytes")
-# print(p_phagocyte_m1)
-# dir_name = './plots'
-# dir.create(dir_name)
-# ggsave(
-#   paste0(dir_name,"/frame_seed_",seed_in,"_STERILE_",sterile,"_TREGS_",allow_tregs_to_do_their_job,"_COGNATE_",allow_tregs_to_suppress_cognate,"_RND_TREGS_",randomize_tregs,"_P_M1.png"),
-#   plot = p_phagocyte_m1,
-#   width = 8,
-#   height = 5,
-#   dpi = 600,
-#   bg = "white"  # =--- important to avoid black background in video
-# )
-

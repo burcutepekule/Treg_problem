@@ -7,8 +7,8 @@ library(gridExtra)
 library(cowplot)
 library(grid)
 library(Rcpp)
-
 # start_time = proc.time()
+
 args = commandArgs(trailingOnly = FALSE)
 script_path = sub("--file=", "", args[grep("--file=", args)])
 if (length(script_path) > 0) {
@@ -27,29 +27,27 @@ source("./PLOT_FUNCTIONS.R")
 dir_name = './frames'
 dir.create(dir_name)
 
-seed_in = 2
+seed_in = 3
 set.seed(seed_in)
 placeholder = nullGrob()
 
+##### NEED TO IMPLEMENT AGE FOR ALL CELLS! INCLUDING EPITHELIUM!
+#### HOW TO ATTRACT T CELLS TO DCS?
 
-########### USER INPUT FOR PLOTTING
-t_max      = 500
-plot_on    = 1
-plot_every = 5 # plot_evey n frames
-sleep_between_frames = 0.01 #sec
-sterile                         = 0 # 0 for pathogenic, 1 for sterile injury
-allow_tregs_to_do_their_job     = TRUE
-allow_tregs_to_suppress_cognate = FALSE
+t_max           = 200
+plot_on         = 1
+plot_every      = 1 # plot_evey n frames
+randomize_tregs = 0
+scenario_ind    = 1
 
 
-########### PARAMETERS TO EXPLORE
 rate_leak_commensal_injury     = 0.50
 rate_leak_commensal_baseline   = 0.05
 rat_com_pat_threshold          = 0.95 # if this is low, too much deactivation
-th_ROS_microbe                 = 0.15 # above this, will kill the microbe
-th_ROS_epith_recover           = th_ROS_microbe+0.15 # above this, will kill the epithelial cell
-active_age_limit               = 10
-epith_recovery_chance          = 0.20 #  % change to recover when level of ROS is low enough
+th_ROS_microbe                 = 0.10 # above this, will kill the microbe
+th_ROS_epith_recover           = th_ROS_microbe+0.20 # above this, will kill the epithelial cell
+active_age_limit               = 5
+epith_recovery_chance          = 0.25 #  % change to recover when level of ROS is low enough
 treg_vicinity_effect           = 1 # if 0, that means has to be at the very same pixel
 
 ros_decay   = 0.50 # DECAY FASTER
@@ -60,7 +58,7 @@ grid_size            = 25
 n_phagocytes         = 200
 n_tregs              = 200
 cc_phagocyte         = 5 # number of time steps before the last bacteria is fully digested
-rounds_active        = 2*cc_phagocyte
+rounds_active        = 5
 digestion_time       = 3
 
 injury_percentage = 60
@@ -114,6 +112,10 @@ scenarios_df = expand.grid(
 )
 
 longitudinal_df_keep = c()
+
+sterile                         = scenarios_df[scenario_ind,]$sterile
+allow_tregs_to_do_their_job     = scenarios_df[scenario_ind,]$allow_tregs_to_do_their_job
+allow_tregs_to_suppress_cognate = scenarios_df[scenario_ind,]$allow_tregs_to_suppress_cognate
 
 if(sterile==0){
   rate_leak_pathogen_injury      = 0.75
@@ -255,10 +257,16 @@ for (t in 1:t_max) {
   }
   
   # Move phagocytes and tregs based on DAMPs gradient
-  density_matrix = DAMPs # here you can choose another density matrix if you like
-  all_equal      = all(density_matrix == density_matrix[1, 1])
+  density_matrix_tregs      = DAMPs # here you can choose another density matrix if you like
+  if(randomize_tregs==1){
+    density_matrix_tregs = matrix(0,grid_size,grid_size)
+  }
+  density_matrix_phagocytes = DAMPs
   
-  if(!all_equal){ 
+  all_equal_treg            = all(density_matrix_tregs == density_matrix_tregs[1, 1])
+  all_equal_phagocytes      = all(density_matrix_phagocytes == density_matrix_phagocytes[1, 1])
+  
+  if(!all_equal_treg){ 
     # Move tregs
     ##### move_agents_vectors_gradient  ######################################## 
     for(i in 1:length(treg_x)) {
@@ -274,7 +282,7 @@ for (t in 1:t_max) {
       neighbors_y = rep(y_range, times = length(x_range))
       
       # Get density values for those cells (vectorized)
-      neighbor_densities = density_matrix[cbind(neighbors_y, neighbors_x)]
+      neighbor_densities = density_matrix_tregs[cbind(neighbors_y, neighbors_x)]
       
       # Normalize to get probabilities
       total = sum(neighbor_densities)
@@ -291,8 +299,19 @@ for (t in 1:t_max) {
       treg_x[i] = neighbors_x[chosen_idx]
       treg_y[i] = neighbors_y[chosen_idx]
     }
-    ###############################################################################
-    
+  } else {
+    # Random movement when no gradient 
+    dy_treg = ifelse(treg_y == 1,
+                     sample(c(1), size = length(treg_y), replace = TRUE),
+                     sample(c(-1, 0, 1), size = length(treg_y), replace = TRUE))
+    dx_treg = iszero_coordinates(dy_treg)# dx sampled conditionally to avoid (0,0)
+    # Update positions with boundary constraints 
+    treg_x = pmin(pmax(treg_x + dx_treg, 1), grid_size)
+    treg_y = pmin(pmax(treg_y + dy_treg, 1), grid_size)
+  }
+  ###############################################################################
+  
+  if(!all_equal_phagocytes){ 
     # Move all phagocytes
     for(i in 1:length(phagocyte_x)){
       x = phagocyte_x[i]
@@ -307,7 +326,7 @@ for (t in 1:t_max) {
       neighbors_y = rep(y_range, times = length(x_range))
       
       # Get density values for those cells (vectorized)
-      neighbor_densities = density_matrix[cbind(neighbors_y, neighbors_x)]
+      neighbor_densities = density_matrix_phagocytes[cbind(neighbors_y, neighbors_x)]
       
       # Normalize to get probabilities
       total = sum(neighbor_densities)
@@ -324,19 +343,8 @@ for (t in 1:t_max) {
       phagocyte_x[i] = neighbors_x[chosen_idx]
       phagocyte_y[i] = neighbors_y[chosen_idx]
     }
-    
   } else {
     # Random movement when no gradient 
-    # tregs
-    dy_treg = ifelse(treg_y == 1,
-                     sample(c(1), size = length(treg_y), replace = TRUE),
-                     sample(c(-1, 0, 1), size = length(treg_y), replace = TRUE))
-    dx_treg = iszero_coordinates(dy_treg)# dx sampled conditionally to avoid (0,0)
-    # Update positions with boundary constraints 
-    treg_x = pmin(pmax(treg_x + dx_treg, 1), grid_size)
-    treg_y = pmin(pmax(treg_y + dy_treg, 1), grid_size)
-    
-    # All phagocytes
     dy_phagocyte = ifelse(phagocyte_y == 1,
                           sample(c(1), size = length(phagocyte_y), replace = TRUE),
                           sample(c(-1, 0, 1), size = length(phagocyte_y), replace = TRUE))
@@ -383,22 +391,18 @@ for (t in 1:t_max) {
     last_id_commensal = last_id_commensal + total_new_commensals
   }
   
-  
   if(plot_on==1 & (t%%plot_every == 0 | t==1)){
     ########### PLOT HERE TO BETTER UNDERSTAND LOCALIZATION!
     source('./CONVERT_TO_DATAFRAME.R')
     p = plot_simtime_simple()
-    # ggsave(
-    #   paste0(dir_name,"/frame_seed_",seed_in,"_STERILE_",sterile,"_TREGS_",allow_tregs_to_do_their_job,"_COGNATE_",allow_tregs_to_suppress_cognate,"_",t,".png"),
-    #   plot = p,
-    #   width = 12,
-    #   height = 10,
-    #   dpi = 600,
-    #   bg = "white"  # =--- important to avoid black background in video
-    # )
-    print(p)
-    Sys.sleep(sleep_between_frames)
-    
+    ggsave(
+      paste0(dir_name,"/frame_seed_",seed_in,"_STERILE_",sterile,"_TREGS_",allow_tregs_to_do_their_job,"_trnd_",randomize_tregs,"_",t,".png"),
+      plot = p,
+      width = 12,
+      height = 10,
+      dpi = 600,
+      bg = "white"  # =--- important to avoid black background in video
+    )
   }
   
   # Update the phagocyte phenotypes
@@ -656,7 +660,6 @@ for (t in 1:t_max) {
     }
   }
   
-  
   # Kill epithelium with ROS
   for(i in 1:nrow(epithelium)) {
     px = epithelium$x[i]
@@ -728,13 +731,22 @@ longitudinal_df = longitudinal_df %>%
 
 longitudinal_df_keep = rbind(longitudinal_df_keep, longitudinal_df)
 
+# Create pattern based on parameters
+pattern = paste0("^frame_seed_\\d+_STERILE_", sterile, "_TREGS_", allow_tregs_to_do_their_job, "_trnd_", randomize_tregs, "_\\d+\\.png$")
 
+# Define file list and output
+png_files = list.files(dir_name, full.names = TRUE, pattern = pattern)
+# Sort files numerically by the time value (last number before .png)
+png_files = png_files[order(as.numeric(gsub(".*_(\\d+)\\.png$", "\\1", png_files)))]
+video_out = paste0(dir_name,"/simulation_sterile", sterile, "_tregs_", allow_tregs_to_do_their_job, "_trnd_", randomize_tregs, ".mp4")
 
-colnames_insert = c('epithelial_healthy','epithelial_inj_1','epithelial_inj_2','epithelial_inj_3','epithelial_inj_4','epithelial_inj_5',
-                    'phagocyte_M0','phagocyte_M1_L_0','phagocyte_M1_L_1','phagocyte_M1_L_2','phagocyte_M1_L_3','phagocyte_M1_L_4','phagocyte_M1_L_5',
-                    'phagocyte_M2_L_0','phagocyte_M2_L_1','phagocyte_M2_L_2','phagocyte_M2_L_3','phagocyte_M2_L_4','phagocyte_M2_L_5',
-                    'commensal','pathogen','treg_resting','treg_active','C_ROS','C_M0','C_M1','C_M2','P_ROS','P_M0','P_M1','P_M2')
-
-colnames(longitudinal_df_keep)[5:35] = colnames_insert
-
+library(av)
+# Create video
+av_encode_video(
+  input = png_files,
+  output = video_out,
+  framerate = 5, # slower playback (e.g. 2 FPS)
+  vfilter = "scale=1000:-2",  # Resize if needed
+  codec = "libx264"      # H.264 codec is widely supported
+)
 
