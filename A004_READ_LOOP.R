@@ -19,7 +19,6 @@ if (length(script_path) > 0) {
 }
 setwd(script_dir)
 
-source("./BASE_FUNCTIONS.R")
 source("./PLOT_FUNCTIONS.R")
 dir_name      = './random_simulations'
 subdir_name   = '/figures'
