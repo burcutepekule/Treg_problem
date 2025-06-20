@@ -34,11 +34,12 @@ dir.create(dir_name)
 scenarios_df = expand.grid(
   sterile = c(0, 1),
   allow_tregs_to_do_their_job = c(FALSE, TRUE),
-  allow_tregs_to_suppress_cognate = c(FALSE)
+  allow_tregs_to_suppress_cognate = c(FALSE),
+  randomize_tregs = c(0,1)
 )
 
 t_max            = 1000
-num_realizations = 100000 
+num_realizations = 500000 
 
 # Initialize empty vectors
 th_ROS_microbe_vec       = numeric()
@@ -174,6 +175,7 @@ for (realization_ind in 1:num_realizations){
     sterile                         = scenarios_df[scenario_ind,]$sterile
     allow_tregs_to_do_their_job     = scenarios_df[scenario_ind,]$allow_tregs_to_do_their_job
     allow_tregs_to_suppress_cognate = scenarios_df[scenario_ind,]$allow_tregs_to_suppress_cognate
+    randomize_tregs                 = scenarios_df[scenario_ind,]$randomize_tregs
     
     if(sterile==0){
       rate_leak_pathogen_injury      = 0.75
@@ -321,10 +323,16 @@ for (realization_ind in 1:num_realizations){
       }
       
       # Move phagocytes and tregs based on DAMPs gradient
-      density_matrix = DAMPs # here you can choose another density matrix if you like
-      all_equal      = all(density_matrix == density_matrix[1, 1])
+      density_matrix_tregs      = DAMPs # here you can choose another density matrix if you like
+      if(randomize_tregs==1){
+        density_matrix_tregs = matrix(0,grid_size,grid_size)
+      }
+      density_matrix_phagocytes = DAMPs
       
-      if(!all_equal){ 
+      all_equal_treg            = all(density_matrix_tregs == density_matrix_tregs[1, 1])
+      all_equal_phagocytes      = all(density_matrix_phagocytes == density_matrix_phagocytes[1, 1])
+      
+      if(!all_equal_treg){ 
         # Move tregs
         ##### move_agents_vectors_gradient  ######################################## 
         for(i in 1:length(treg_x)) {
@@ -340,7 +348,7 @@ for (realization_ind in 1:num_realizations){
           neighbors_y = rep(y_range, times = length(x_range))
           
           # Get density values for those cells (vectorized)
-          neighbor_densities = density_matrix[cbind(neighbors_y, neighbors_x)]
+          neighbor_densities = density_matrix_tregs[cbind(neighbors_y, neighbors_x)]
           
           # Normalize to get probabilities
           total = sum(neighbor_densities)
@@ -357,8 +365,19 @@ for (realization_ind in 1:num_realizations){
           treg_x[i] = neighbors_x[chosen_idx]
           treg_y[i] = neighbors_y[chosen_idx]
         }
-        ###############################################################################
-        
+      } else {
+        # Random movement when no gradient 
+        dy_treg = ifelse(treg_y == 1,
+                         sample(c(1), size = length(treg_y), replace = TRUE),
+                         sample(c(-1, 0, 1), size = length(treg_y), replace = TRUE))
+        dx_treg = iszero_coordinates(dy_treg)# dx sampled conditionally to avoid (0,0)
+        # Update positions with boundary constraints 
+        treg_x = pmin(pmax(treg_x + dx_treg, 1), grid_size)
+        treg_y = pmin(pmax(treg_y + dy_treg, 1), grid_size)
+      }
+      ###############################################################################
+      
+      if(!all_equal_phagocytes){ 
         # Move all phagocytes
         for(i in 1:length(phagocyte_x)){
           x = phagocyte_x[i]
@@ -373,7 +392,7 @@ for (realization_ind in 1:num_realizations){
           neighbors_y = rep(y_range, times = length(x_range))
           
           # Get density values for those cells (vectorized)
-          neighbor_densities = density_matrix[cbind(neighbors_y, neighbors_x)]
+          neighbor_densities = density_matrix_phagocytes[cbind(neighbors_y, neighbors_x)]
           
           # Normalize to get probabilities
           total = sum(neighbor_densities)
@@ -390,19 +409,8 @@ for (realization_ind in 1:num_realizations){
           phagocyte_x[i] = neighbors_x[chosen_idx]
           phagocyte_y[i] = neighbors_y[chosen_idx]
         }
-        
       } else {
         # Random movement when no gradient 
-        # tregs
-        dy_treg = ifelse(treg_y == 1,
-                         sample(c(1), size = length(treg_y), replace = TRUE),
-                         sample(c(-1, 0, 1), size = length(treg_y), replace = TRUE))
-        dx_treg = iszero_coordinates(dy_treg)# dx sampled conditionally to avoid (0,0)
-        # Update positions with boundary constraints 
-        treg_x = pmin(pmax(treg_x + dx_treg, 1), grid_size)
-        treg_y = pmin(pmax(treg_y + dy_treg, 1), grid_size)
-        
-        # All phagocytes
         dy_phagocyte = ifelse(phagocyte_y == 1,
                               sample(c(1), size = length(phagocyte_y), replace = TRUE),
                               sample(c(-1, 0, 1), size = length(phagocyte_y), replace = TRUE))
@@ -411,6 +419,7 @@ for (realization_ind in 1:num_realizations){
         phagocyte_x = pmin(pmax(phagocyte_x + dx_phagocyte, 1), grid_size)
         phagocyte_y = pmin(pmax(phagocyte_y + dy_phagocyte, 1), grid_size)
       }
+      
       
       # Add new microbes based on the injured epithelium
       n_pathogens_lp_new = round(mean(epithelium$level_injury) * rate_leak_pathogen_injury * length(injury_site_updated))
