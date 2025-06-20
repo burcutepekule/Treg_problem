@@ -35,7 +35,7 @@ placeholder = nullGrob()
 ##### NEED TO IMPLEMENT AGE FOR ALL CELLS! INCLUDING EPITHELIUM!
 #### HOW TO ATTRACT T CELLS TO DCS?
 
-t_max           = 1000
+t_max           = 5000
 plot_on         = 0
 plot_every      = 100 # plot_evey n frames
 randomize_tregs = 0
@@ -752,8 +752,40 @@ print(p_epithelium)
 dir_name = './plots'
 dir.create(dir_name)
 ggsave(
-  paste0(dir_name,"/frame_seed_",seed_in,"_STERILE_",sterile,"_TREGS_",allow_tregs_to_do_their_job,"_COGNATE_",allow_tregs_to_suppress_cognate,"_RND_TREGS_",randomize_tregs,".png"),
+  paste0(dir_name,"/frame_seed_",seed_in,"_STERILE_",sterile,"_TREGS_",allow_tregs_to_do_their_job,"_COGNATE_",allow_tregs_to_suppress_cognate,"_RND_TREGS_",randomize_tregs,"_epithelium.png"),
   plot = p_epithelium,
+  width = 8,
+  height = 5,
+  dpi = 600,
+  bg = "white"  # =--- important to avoid black background in video
+)
+
+
+p_pathogen = plot_faceted(longitudinal_df_keep, c("pathogen"), "Pathogen Abundance")
+
+print(p_pathogen)
+
+dir_name = './plots'
+dir.create(dir_name)
+ggsave(
+  paste0(dir_name,"/frame_seed_",seed_in,"_STERILE_",sterile,"_TREGS_",allow_tregs_to_do_their_job,"_COGNATE_",allow_tregs_to_suppress_cognate,"_RND_TREGS_",randomize_tregs,"_pathogen.png"),
+  plot = p_pathogen,
+  width = 8,
+  height = 5,
+  dpi = 600,
+  bg = "white"  # =--- important to avoid black background in video
+)
+
+
+p_phagocyte_m1 = plot_faceted(longitudinal_df_keep, c(paste0("phagocyte_M1_L_", 0:5)), "M1 Phagocytes")
+
+print(p_phagocyte_m1)
+
+dir_name = './plots'
+dir.create(dir_name)
+ggsave(
+  paste0(dir_name,"/frame_seed_",seed_in,"_STERILE_",sterile,"_TREGS_",allow_tregs_to_do_their_job,"_COGNATE_",allow_tregs_to_suppress_cognate,"_RND_TREGS_",randomize_tregs,"_P_M1.png"),
+  plot = p_phagocyte_m1,
   width = 8,
   height = 5,
   dpi = 600,
