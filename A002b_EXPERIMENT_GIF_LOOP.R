@@ -26,7 +26,7 @@ setwd(script_dir)
 source("./FAST_FUNCTIONS.R")
 source("./PLOT_FUNCTIONS.R")
 
-dir_name = './frames'
+dir_name = './sim_plots'
 dir.create(dir_name)
 
 seed_in = 3

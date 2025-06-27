@@ -28,14 +28,14 @@ source("./PLOT_FUNCTIONS.R")
 dir_name = './frames'
 dir.create(dir_name)
 
-seed_in = 3
+seed_in = 5
 set.seed(seed_in)
 placeholder = nullGrob()
 
 ##### NEED TO IMPLEMENT AGE FOR ALL CELLS! INCLUDING EPITHELIUM!
 #### HOW TO ATTRACT T CELLS TO DCS?
 
-t_max      = 5000
+t_max      = 1000
 plot_on    = 0
 plot_every = 100 # plot_evey n frames
 
@@ -43,9 +43,8 @@ rate_leak_commensal_injury     = 0.50
 rate_leak_commensal_baseline   = 0.05
 rat_com_pat_threshold          = 0.95 # if this is low, too much deactivation
 th_ROS_microbe                 = 0.10 # above this, will kill the microbe
-th_ROS_epith_recover           = th_ROS_microbe+0.20 # above this, will kill the epithelial cell
-active_age_limit               = 5
-epith_recovery_chance          = 0.25 #  % change to recover when level of ROS is low enough
+th_ROS_epith_recover           = th_ROS_microbe+0.05 # above this, will kill the epithelial cell
+epith_recovery_chance          = 0.10 #  % change to recover when level of ROS is low enough
 treg_vicinity_effect           = 1 # if 0, that means has to be at the very same pixel
 
 ros_decay   = 0.50 # DECAY FASTER
@@ -56,8 +55,8 @@ grid_size            = 25
 n_phagocytes         = 200
 n_tregs              = 200
 cc_phagocyte         = 5 # number of time steps before the last bacteria is fully digested
-rounds_active        = 2*cc_phagocyte
 digestion_time       = 3
+active_age_limit     = 5
 
 injury_percentage = 60
 injury_site       = get_middle_percent(seq(1,grid_size), injury_percentage)
@@ -102,6 +101,10 @@ activity_ROS_max          = 0.99
 activity_engulf_M1_step   = (activity_engulf_max-activity_engulf_M1_baseline)/cc_phagocyte
 activity_engulf_M2_step   = (activity_engulf_max-activity_engulf_M2_baseline)/cc_phagocyte
 activity_ROS_M1_step      = (activity_ROS_max-activity_ROS_M1_baseline)/cc_phagocyte
+
+## logistic function
+k_in  = 0.044
+x0_in = 50
 
 scenarios_df = expand.grid(
   sterile = c(0, 1),
@@ -182,14 +185,12 @@ for (scenario_ind in 1:nrow(scenarios_df)){
   last_id_pathogen  = n_pathogens_lp
   last_id_commensal = n_commensals_lp
   
-  
   pathogens_killed_by_ROS = 0
   pathogens_killed_by_Mac = rep(0,3)
   
   commensals_killed_by_ROS = 0
   commensals_killed_by_Mac = rep(0,3)
-  
-  
+
   ### KEEP THE NUMBERS
   epithelium_longitudinal  = matrix(0,nrow=t_max, ncol=(max_level_injury+1))
   macrophages_longitudinal = matrix(0,nrow=t_max, ncol=1+2*(cc_phagocyte+1)) # M0, M1, M2 levels
@@ -201,9 +202,6 @@ for (scenario_ind in 1:nrow(scenarios_df)){
     
     # Update injury site
     injury_site_updated = which(epithelium$level_injury>0)
-    
-    # Update DAMPs
-    DAMPs[1,] = DAMPs[1,] + epithelium$level_injury*add_DAMPs
     
     # Update SAMPs based on activated tregs
     active_tregs = which(treg_phenotype == 1)
@@ -220,15 +218,7 @@ for (scenario_ind in 1:nrow(scenarios_df)){
         ROS[phagocyte_y[i], phagocyte_x[i]] = ROS[phagocyte_y[i], phagocyte_x[i]] + phagocyte_activity_ROS[i] * add_ROS
       }
     }
-    
-    # Diffuse & decay DAMPs, SAMPs, and ROS.
-    DAMPs   = diffuse_matrix(DAMPs, diffusion_speed_DAMPs, max_cell_value_DAMPs)
-    SAMPs   = diffuse_matrix(SAMPs, diffusion_speed_SAMPs, max_cell_value_SAMPs)
-    ROS     = diffuse_matrix(ROS, diffusion_speed_ROS, max_cell_value_ROS)
-    DAMPs   = DAMPs - DAMPs_decay*DAMPs
-    SAMPs   = SAMPs - SAMPs_decay*SAMPs
-    ROS     = ROS - ros_decay*ROS
-    
+
     # Move pathogens and commensals randomly (optimized for matrices)
     if(nrow(pathogen_coords) > 0) {
       # Initialize dy vector
@@ -256,6 +246,36 @@ for (scenario_ind in 1:nrow(scenarios_df)){
       commensal_coords[, "x"] = pmin(pmax(commensal_coords[, "x"] + dx, 1), grid_size)
       commensal_coords[, "y"] = pmin(pmax(commensal_coords[, "y"] + dy, 1), grid_size)   
     }
+    
+    # Pre-calculate pathogen counts touching epithelium (y=1) for each x position
+    pathogen_epithelium_counts = rep(0, grid_size)
+    if(nrow(pathogen_coords) > 0) {
+      epithelium_pathogens = pathogen_coords[pathogen_coords[, "y"] == 1, , drop = FALSE]
+      if(nrow(epithelium_pathogens) > 0) {
+        pathogen_epithelium_counts = tabulate(epithelium_pathogens[, "x"], nbins = grid_size)
+      }
+    }
+    
+    # Pre-calculate commensal counts touching epithelium (y=1) for each x position
+    commensal_epithelium_counts = rep(0, grid_size)
+    if(nrow(commensal_coords) > 0) {
+      epithelium_commensals = commensal_coords[commensal_coords[, "y"] == 1, , drop = FALSE]
+      if(nrow(epithelium_commensals) > 0) {
+        commensal_epithelium_counts = tabulate(epithelium_commensals[, "x"], nbins = grid_size)
+      }
+    }
+    
+    # Update DAMPs
+    DAMPs[1,] = DAMPs[1,] + epithelium$level_injury*add_DAMPs
+    DAMPs[1,] = DAMPs[1,] + 1*logistic_scaled_0_to_5_quantized(pathogen_epithelium_counts+commensal_epithelium_counts)*add_DAMPs
+    
+    # Diffuse & decay DAMPs, SAMPs, and ROS.
+    DAMPs   = diffuse_matrix(DAMPs, diffusion_speed_DAMPs, max_cell_value_DAMPs)
+    SAMPs   = diffuse_matrix(SAMPs, diffusion_speed_SAMPs, max_cell_value_SAMPs)
+    ROS     = diffuse_matrix(ROS, diffusion_speed_ROS, max_cell_value_ROS)
+    DAMPs   = DAMPs - DAMPs_decay*DAMPs
+    SAMPs   = SAMPs - SAMPs_decay*SAMPs
+    ROS     = ROS - ros_decay*ROS
     
     # Move phagocytes and tregs based on DAMPs gradient
     density_matrix = DAMPs # here you can choose another density matrix if you like
@@ -638,25 +658,7 @@ for (scenario_ind in 1:nrow(scenarios_df)){
       }
     }
     
-    # Pre-calculate pathogen counts touching epithelium (y=1) for each x position
-    pathogen_epithelium_counts = rep(0, grid_size)
-    if(nrow(pathogen_coords) > 0) {
-      epithelium_pathogens = pathogen_coords[pathogen_coords[, "y"] == 1, , drop = FALSE]
-      if(nrow(epithelium_pathogens) > 0) {
-        pathogen_epithelium_counts = tabulate(epithelium_pathogens[, "x"], nbins = grid_size)
-      }
-    }
-    
-    # Pre-calculate commensal counts touching epithelium (y=1) for each x position
-    commensal_epithelium_counts = rep(0, grid_size)
-    if(nrow(commensal_coords) > 0) {
-      epithelium_commensals = commensal_coords[commensal_coords[, "y"] == 1, , drop = FALSE]
-      if(nrow(epithelium_commensals) > 0) {
-        commensal_epithelium_counts = tabulate(epithelium_commensals[, "x"], nbins = grid_size)
-      }
-    }
-    
-    # Kill epithelium with ROS
+    # Injur epithelium with pathogens / commensals
     for(i in 1:nrow(epithelium)) {
       px = epithelium$x[i]
       
@@ -665,13 +667,10 @@ for (scenario_ind in 1:nrow(scenarios_df)){
       ros_values = ROS[1, x_coordinates]  # Row right below epithelium
       mean_ros = mean(ros_values)
       
-      # RULE 1a: Increase level_injury based on pathogen count
+      # Increase level_injury based on pathogen count
       count_pathogens = pathogen_epithelium_counts[px]
-      epithelium$level_injury[i] = epithelium$level_injury[i] + round(log(count_pathogens + 1))
-      
-      # RULE 1b: Increase level_injury based on pathogen count - BECAUSE IT'S BASOLATERAL!
-      count_commensals = commensal_epithelium_counts[px]
-      epithelium$level_injury[i] = epithelium$level_injury[i] + round(log(count_commensals + 1))
+      # epithelium$level_injury[i] = epithelium$level_injury[i] + round(log(count_pathogens + 1))
+      epithelium$level_injury[i] = epithelium$level_injury[i] + logistic_scaled_0_to_5_quantized(count_pathogens)
       
       # RULE 2: Increase level_injury based on ROS
       if(mean_ros > th_ROS_epith_recover) {
@@ -723,7 +722,7 @@ for (scenario_ind in 1:nrow(scenarios_df)){
   
   # Optional: Reorder columns to have metadata first
   longitudinal_df = longitudinal_df %>%
-    select(t, sterile, allow_tregs_to_do_their_job, allow_tregs_to_suppress_cognate, everything())
+    dplyr::select(t, sterile, allow_tregs_to_do_their_job, allow_tregs_to_suppress_cognate, everything())
   
   longitudinal_df_keep = rbind(longitudinal_df_keep, longitudinal_df)
 }
@@ -742,9 +741,4 @@ p_epithelium = plot_faceted(longitudinal_df_keep,
                             "Epithelial Cell Dynamics")
 
 print(p_epithelium)
-
-p_microbes   = plot_faceted(longitudinal_df_keep, c("commensal", "pathogen"),
-                            "Microbe Dynamics")
-
-print(p_microbes)
 

@@ -1,6 +1,11 @@
 rm(list=ls())
 library(dplyr)
 library(tidyr)
+library(cowplot)
+library(ggplot2)
+library(gridExtra)
+library(cowplot)
+library(grid)
 library(Rcpp)
 
 args = commandArgs(trailingOnly = FALSE)
@@ -24,6 +29,7 @@ if (length(args_trailing) >= 1) {
 set.seed(core_index)
 
 source("./FAST_FUNCTIONS.R")
+source("./PLOT_FUNCTIONS.R")
 
 # start_time = proc.time()
 
@@ -40,47 +46,60 @@ scenarios_df = expand.grid(
   randomize_tregs = 0
 )
 
-t_max            = 2000
-num_realizations = 1000 
+t_max            = 5000
+num_realizations = 999 
 
-th_ROS_microbe_vec        = runif(num_realizations, min=0, max=1)
-th_ROS_epith_recover_vec  = runif(num_realizations, min=0, max=1)
-epith_recovery_chance_vec = runif(num_realizations, min=0, max=1)
-rat_com_pat_threshold_vec = runif(num_realizations, min=0.5, max=1) # at least above half?
+# Initialize empty vectors
+th_ROS_microbe_vec       = numeric()
+th_ROS_epith_recover_vec = numeric()
+
+# Repeat sampling until condition is satisfied
+while(length(th_ROS_microbe_vec) < num_realizations) {
+  
+  microbe_temp  = sample(seq(0.05,0.15,0.05),1)
+  recover_temp  = sample(seq(microbe_temp+0.05,0.5,0.05),1)
+  
+  th_ROS_microbe_vec       = c(th_ROS_microbe_vec, microbe_temp)
+  th_ROS_epith_recover_vec = c(th_ROS_epith_recover_vec, recover_temp)
+}
+
+# Other parameters
+active_age_limit_vec      = sample(seq(3, 15, 1), num_realizations, replace=T)
+epith_recovery_chance_vec = sample(seq(0.15, 0.75, 0,05), num_realizations, replace=T)
+rat_com_pat_threshold_vec = sample(seq(0.5,1,0.05), num_realizations, replace=T) # if this is low, too much deactivation
 
 #### THESE BOTH NEED TO BE BELOW 0.125! (BECAUSE 8 NEIGHBORS AND DIFFUSES **ALL** TO 8 NEIGHBORS NOTHING LEFT IN THE CENTER SINCE 0.125*8 =1)
-diffusion_speed_DAMPs_vec = runif(num_realizations, min=0, max=0.12)
-diffusion_speed_SAMPs_vec = runif(num_realizations, min=0, max=0.12)
-diffusion_speed_ROS_vec   = runif(num_realizations, min=0, max=0.12)
+diffusion_speed_DAMPs_vec = sample(seq(0.05,0.12,0.01), num_realizations, replace=T)
+diffusion_speed_SAMPs_vec = sample(seq(0.05,0.12,0.01), num_realizations, replace=T)
+diffusion_speed_ROS_vec   = sample(seq(0.05,0.12,0.01), num_realizations, replace=T)
 
-add_ROS_vec   = runif(num_realizations, min=0, max=1)
-add_DAMPs_vec = runif(num_realizations, min=0, max=1)
-add_SAMPs_vec = runif(num_realizations, min=0, max=1)
+add_ROS_vec   = sample(seq(0.15,0.75,0.05), num_realizations, replace=T)
+add_DAMPs_vec = sample(seq(0.15,0.75,0.05), num_realizations, replace=T)
+add_SAMPs_vec = sample(seq(0.15,0.75,0.05), num_realizations, replace=T)
 
-ros_decay_vec   = runif(num_realizations, min=0, max=1)
-DAMPs_decay_vec = runif(num_realizations, min=0, max=1)
-SAMPs_decay_vec = runif(num_realizations, min=0, max=1)
+ros_decay_vec   = sample(seq(0.15,0.65,0.05), num_realizations, replace=T)
+DAMPs_decay_vec = sample(seq(0.15,0.65,0.05), num_realizations, replace=T)
+SAMPs_decay_vec = sample(seq(0.15,0.65,0.05), num_realizations, replace=T)
 
-activation_threshold_DAMPs_vec = runif(num_realizations, min=0, max=1)
-activation_threshold_SAMPs_vec = runif(num_realizations, min=0, max=1)
+activation_threshold_DAMPs_vec = sample(seq(0.01,0.15,0.01), num_realizations, replace=T)
+activation_threshold_SAMPs_vec = sample(seq(0.01,0.15,0.01), num_realizations, replace=T)
 
-# engulfing and ROS rates - baseline is max 50% of the capacity
-activity_engulf_M0_baseline_vec    = runif(num_realizations, min=0, max=0.5)
-activity_engulf_M1_baseline_vec    = runif(num_realizations, min=0, max=0.5)
-activity_engulf_M2_baseline_vec    = runif(num_realizations, min=0, max=0.5)
-activity_ROS_M1_baseline_vec       = runif(num_realizations, min=0, max=0.5)
+# engulfing and ROS rates
+activity_engulf_M0_baseline_vec    = sample(seq(0.15,0.35,0.05), num_realizations, replace=T)
+activity_engulf_M1_baseline_vec    = sample(seq(0.25,0.75,0.05), num_realizations, replace=T)
+activity_engulf_M2_baseline_vec    = sample(seq(0.25,0.75,0.05), num_realizations, replace=T)
+activity_ROS_M1_baseline_vec       = sample(seq(0.05,0.50,0.05), num_realizations, replace=T)
 
-rate_leak_commensal_injury_vec     = runif(num_realizations, min=0.5, max=1)
-rate_leak_pathogen_injury_vec      = runif(num_realizations, min=0.5, max=1)
-rate_leak_commensal_baseline_vec   = runif(num_realizations, min=0, max=0.25)
+rate_leak_commensal_injury_vec     = sample(seq(0.50,0.75,0.05), num_realizations, replace=T)
+rate_leak_pathogen_injury_vec      = sample(seq(0.75,0.95,0.05), num_realizations, replace=T)
 
-active_age_limit_vec  = sample(seq(3, 10, 1), num_realizations, replace=T)
-# digestion_time_vec    = sample(seq(3, 10, 1), num_realizations, replace=T)
+digestion_time_vec                 = sample(seq(3, 15, 1), num_realizations, replace=T)
 
 # Combine into dataframe
 parameters_df = data.frame(
   th_ROS_microbe               = th_ROS_microbe_vec,
   th_ROS_epith_recover         = th_ROS_epith_recover_vec,
+  active_age_limit             = active_age_limit_vec,
   epith_recovery_chance        = epith_recovery_chance_vec,
   rat_com_pat_threshold        = rat_com_pat_threshold_vec,
   diffusion_speed_DAMPs        = diffusion_speed_DAMPs_vec,
@@ -100,15 +119,16 @@ parameters_df = data.frame(
   activity_ROS_M1_baseline     = activity_ROS_M1_baseline_vec,
   rate_leak_commensal_injury   = rate_leak_commensal_injury_vec,
   rate_leak_pathogen_injury    = rate_leak_pathogen_injury_vec,
-  active_age_limit             = active_age_limit_vec,
-  # digestion_time               = digestion_time_vec,
-  rate_leak_commensal_baseline = rate_leak_commensal_baseline_vec
+  digestion_time               = digestion_time_vec
 )
 #########################################
-treg_vicinity_effect = 1 # if 0, that means has to be at the very same pixel
+rate_leak_commensal_baseline   = 0.05
+treg_vicinity_effect           = 1 # if 0, that means has to be at the very same pixel
 grid_size            = 25
 n_phagocytes         = 200
 n_tregs              = 200
+cc_phagocyte         = 5 # number of time steps before the last bacteria is fully digested
+rounds_active        = 2*cc_phagocyte
 injury_percentage    = 60
 injury_site = get_middle_percent(seq(1,grid_size), injury_percentage)
 
@@ -132,36 +152,33 @@ activity_ROS_M2_baseline  = 0.00
 activity_ROS_max          = 0.99
 
 max_level_injury          = 5
-cc_phagocyte              = 5
-digestion_time            = 3
 
 saveRDS(parameters_df,paste0(dir_name,'/parameters_df_',core_index,'.rds'))
 
 for (realization_ind in 1:num_realizations){
-  params                        = parameters_df[realization_ind, ]
-  th_ROS_microbe                = params$th_ROS_microbe  # above this, will kill the microbe
-  th_ROS_epith_recover          = params$th_ROS_epith_recover  # above this, will kill the epithelial cell
-  epith_recovery_chance         = params$epith_recovery_chance 
-  rat_com_pat_threshold         = params$rat_com_pat_threshold
-  diffusion_speed_DAMPs         = params$diffusion_speed_DAMPs
-  diffusion_speed_SAMPs         = params$diffusion_speed_SAMPs
-  diffusion_speed_ROS           = params$diffusion_speed_ROS
-  add_ROS                       = params$add_ROS
-  add_DAMPs                     = params$add_DAMPs
-  add_SAMPs                     = params$add_SAMPs
-  ros_decay                     = params$ros_decay
-  DAMPs_decay                   = params$DAMPs_decay
-  SAMPs_decay                   = params$SAMPs_decay
-  activation_threshold_DAMPs    = params$activation_threshold_DAMPs
-  activation_threshold_SAMPs    = params$activation_threshold_SAMPs
-  activity_engulf_M0_baseline   = params$activity_engulf_M0_baseline
-  activity_engulf_M1_baseline   = params$activity_engulf_M1_baseline
-  activity_engulf_M2_baseline   = params$activity_engulf_M2_baseline
-  activity_ROS_M1_baseline      = params$activity_ROS_M1_baseline
-  rate_leak_commensal_injury    = params$rate_leak_commensal_injury
-  # digestion_time                = params$digestion_time
-  active_age_limit              = params$active_age_limit
-  rate_leak_commensal_baseline  = params$rate_leak_commensal_baseline
+  
+  th_ROS_microbe                = parameters_df[realization_ind, ]$th_ROS_microbe  # above this, will kill the microbe
+  th_ROS_epith_recover          = parameters_df[realization_ind, ]$th_ROS_epith_recover  # above this, will kill the epithelial cell
+  active_age_limit              = parameters_df[realization_ind, ]$active_age_limit
+  epith_recovery_chance         = parameters_df[realization_ind, ]$epith_recovery_chance 
+  rat_com_pat_threshold         = parameters_df[realization_ind, ]$rat_com_pat_threshold
+  diffusion_speed_DAMPs         = parameters_df[realization_ind, ]$diffusion_speed_DAMPs
+  diffusion_speed_SAMPs         = parameters_df[realization_ind, ]$diffusion_speed_SAMPs
+  diffusion_speed_ROS           = parameters_df[realization_ind, ]$diffusion_speed_ROS
+  add_ROS                       = parameters_df[realization_ind, ]$add_ROS
+  add_DAMPs                     = parameters_df[realization_ind, ]$add_DAMPs
+  add_SAMPs                     = parameters_df[realization_ind, ]$add_SAMPs
+  ros_decay                     = parameters_df[realization_ind, ]$ros_decay
+  DAMPs_decay                   = parameters_df[realization_ind, ]$DAMPs_decay
+  SAMPs_decay                   = parameters_df[realization_ind, ]$SAMPs_decay
+  activation_threshold_DAMPs    = parameters_df[realization_ind, ]$activation_threshold_DAMPs
+  activation_threshold_SAMPs    = parameters_df[realization_ind, ]$activation_threshold_SAMPs
+  activity_engulf_M0_baseline   = parameters_df[realization_ind, ]$activity_engulf_M0_baseline
+  activity_engulf_M1_baseline   = parameters_df[realization_ind, ]$activity_engulf_M1_baseline
+  activity_engulf_M2_baseline   = parameters_df[realization_ind, ]$activity_engulf_M2_baseline
+  activity_ROS_M1_baseline      = parameters_df[realization_ind, ]$activity_ROS_M1_baseline
+  rate_leak_commensal_injury    = parameters_df[realization_ind, ]$rate_leak_commensal_injury
+  digestion_time                = parameters_df[realization_ind, ]$digestion_time
   
   for (scenario_ind in 1:nrow(scenarios_df)){
     sterile                         = scenarios_df[scenario_ind,]$sterile
@@ -170,7 +187,7 @@ for (realization_ind in 1:num_realizations){
     randomize_tregs                 = scenarios_df[scenario_ind,]$randomize_tregs
     
     if(sterile==0){
-      rate_leak_pathogen_injury     = params$rate_leak_pathogen_injury
+      rate_leak_pathogen_injury     = parameters_df[realization_ind, ]$rate_leak_pathogen_injury
     }else{
       rate_leak_pathogen_injury      = 0.00
     }
@@ -252,7 +269,8 @@ for (realization_ind in 1:num_realizations){
     microbes_longitudinal    = matrix(0,nrow=t_max, ncol=2) # first column commensals, second column pathogens
     tregs_longitudinal       = matrix(0,nrow=t_max, ncol=2) # two phenotypes, active and resting
     microbes_cumdeath_longitudinal = matrix(0,nrow=t_max, ncol=2*4) # first 4 columns commensals, second 4 columns pathogens - death by ROS, M0, M1, M2
-
+    longitudinal_df_keep = c()
+    
     for (t in 1:t_max) {
       
       # Update injury site
@@ -448,6 +466,18 @@ for (realization_ind in 1:num_realizations){
         commensal_coords = rbind(commensal_coords, new_commensal_coords)
         last_id_commensal = last_id_commensal + total_new_commensals
       }
+      
+      ########### PLOT HERE TO BETTER UNDERSTAND LOCALIZATION!
+      # p = plot_simtime_simple()
+      # ggsave(
+      #   paste0("frames/frame_STERILE_",sterile,"_TREGS_",allow_tregs_to_do_their_job,"_COGNATE_",allow_tregs_to_suppress_cognate,"_",t,".png"),
+      #   plot = p,
+      #   width = 12,
+      #   height = 10,
+      #   dpi = 600,
+      #   bg = "white"  # =--- important to avoid black background in video
+      # )
+      # 
       
       # Update the phagocyte phenotypes
       # Vectorized operations where possible
@@ -741,8 +771,8 @@ for (realization_ind in 1:num_realizations){
       # Phenotype counting
       phagocyte_counts = c(
         sum(phagocyte_phenotype == 0),  # M0
-        tabulate(phagocyte_active_age[phagocyte_phenotype == 1] + 1, cc_phagocyte+1),  # M1 by level
-        tabulate(phagocyte_active_age[phagocyte_phenotype == 2] + 1, cc_phagocyte+1)   # M2 by level  
+        tabulate(phagocyte_active_age[phagocyte_phenotype == 1] + 1, 6),  # M1 by level
+        tabulate(phagocyte_active_age[phagocyte_phenotype == 2] + 1, 6)   # M2 by level  
       )
       macrophages_longitudinal[t, ] = phagocyte_counts
       

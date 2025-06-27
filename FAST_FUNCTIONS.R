@@ -1,3 +1,18 @@
+# Logistic function
+logistic_function <- function(x, k = k_in, x0 = x0_in) {
+  return(1 / (1 + exp(-k * (x - x0))))
+}
+
+logistic_scaled_0_to_5_quantized <- function(x,  k = k_in, x0 = x0_in) {
+  # return(round(4*plogis(x, location = x0, scale = 1 / k))+1)
+  return(round(5*plogis(x, location = x0, scale = 1 / k)))
+}
+
+# k_in = 0.044
+# x0_in= 50
+# plot(seq(0,200,1),round(log(1+seq(0,200,1))),col='red')
+# points(seq(0,200,1),logistic_scaled_0_to_5_quantized(seq(0,200,1),k=k_in,x0=x0_in), col='blue')
+
 get_8n_avg_signal_fast <- function(x, y, act_radius_signal, signal_matrix) {
   loc  = c(x, y)
   x_coordinates = (loc[1]-act_radius_signal):(loc[1]+act_radius_signal)

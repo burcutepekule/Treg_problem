@@ -86,6 +86,29 @@ plot_faceted = function(data, variables, title) {
   return(p)
 }
 
+plot_faceted_stationary = function(data, variables, title) {
+  data_long = data %>%
+    dplyr::select(t, sterile, allow_tregs_to_do_their_job, first_stable_t, all_of(variables)) %>%
+    pivot_longer(cols = all_of(variables), names_to = "variable", values_to = "value")
+  
+  # Summarize the vertical line position per facet
+  vline_data = data_long %>%
+    distinct(sterile, allow_tregs_to_do_their_job, first_stable_t)
+  
+  p=ggplot(data_long, aes(x = t, y = value, color = variable)) +
+    geom_line(alpha = 1, linewidth = 1) +
+    geom_vline(data = vline_data, 
+               aes(xintercept = first_stable_t), 
+               linetype = "dashed", color = "black") +
+    facet_grid(sterile ~ allow_tregs_to_do_their_job, labeller = label_both) +
+    scale_color_manual(values = agent_colors) +
+    theme_minimal() +
+    labs(title = title, x = "Time", y = "Count", color = "Agent")
+  
+  return(p)
+}
+
+
 plot_faceted_8 = function(data, variables, title) {
   data_long = data %>%
     dplyr::select(t, sterile, allow_tregs_to_do_their_job, randomize_tregs, all_of(variables)) %>%
@@ -93,7 +116,8 @@ plot_faceted_8 = function(data, variables, title) {
   
   p = ggplot(data_long, aes(x = t, y = value, color = variable)) +
     geom_line(alpha = 1, linewidth = 1) +
-    facet_grid(sterile ~ allow_tregs_to_do_their_job + randomize_tregs, labeller = label_both) +
+    # facet_grid(sterile ~ allow_tregs_to_do_their_job + randomize_tregs, labeller = label_both) +
+    facet_grid(randomize_tregs ~ allow_tregs_to_do_their_job + sterile, labeller = label_both) +
     scale_color_manual(values = agent_colors) +
     theme_minimal() +
     labs(title = title, x = "Time", y = "Count", color = "Agent")
@@ -122,7 +146,7 @@ plot_grid_DAMPs <- function() {
       fill = agent_colors[type],
       y = grid_size+ 1 - y
     ) %>%
-    select(x, y, fill)
+    dplyr::select(x, y, fill)
   
   # --- Plot ---
   p_damps = ggplot() +
@@ -167,7 +191,7 @@ plot_grid_SAMPs <- function() {
       fill = agent_colors[type],
       y = grid_size+ 1 - y
     ) %>%
-    select(x, y, fill)
+    dplyr::select(x, y, fill)
   
   # --- Plot ---
   p_samps = ggplot() +
@@ -212,7 +236,7 @@ plot_grid_ROS <- function() {
       fill = agent_colors[type],
       y = grid_size+ 1 - y
     ) %>%
-    select(x, y, fill)
+    dplyr::select(x, y, fill)
   
   # --- Plot ---
   p_ros = ggplot() +
@@ -267,9 +291,9 @@ plot_grid_antiinf <- function() {
     "phagocyte_M2","treg_active")
   
   agent_plot_df <- bind_rows(
-    epithelial_layer %>% select(x, y, type),
-    phagocytes_plot %>% select(x, y, type),
-    tregs_plot  %>% select(x, y, type)
+    epithelial_layer %>% dplyr::select(x, y, type),
+    phagocytes_plot %>% dplyr::select(x, y, type),
+    tregs_plot  %>% dplyr::select(x, y, type)
   ) %>%
     mutate(type = factor(type, levels = all_types))
   
@@ -321,8 +345,8 @@ plot_grid_phagocyte_M1 <- function() {
   
   # Combine all agents into one dataframe with their type
   agent_plot_df <- bind_rows(
-    epithelial_layer %>% select(x, y, type),
-    phagocytes_plot %>% select(x, y, type)
+    epithelial_layer %>% dplyr::select(x, y, type),
+    phagocytes_plot %>% dplyr::select(x, y, type)
   )
   
   # 2. Combine all agents into one dataframe with their type
@@ -334,8 +358,8 @@ plot_grid_phagocyte_M1 <- function() {
     "phagocyte_M1_L_0","phagocyte_M1_L_1","phagocyte_M1_L_2","phagocyte_M1_L_3","phagocyte_M1_L_4","phagocyte_M1_L_5")
   
   agent_plot_df <- bind_rows(
-    epithelial_layer %>% select(x, y, type),
-    phagocytes_plot %>% select(x, y, type)
+    epithelial_layer %>% dplyr::select(x, y, type),
+    phagocytes_plot %>% dplyr::select(x, y, type)
   ) %>%
     mutate(type = factor(type, levels = all_types))
   
@@ -545,7 +569,7 @@ plot_grid_pathogens <- function() {
   }
   
   epithelial_layer_plot <- epithelial_layer %>%
-    select(x, y, type) %>%
+    dplyr::select(x, y, type) %>%
     mutate(alpha_val = 1)
   
   agent_plot_df <- bind_rows(
@@ -618,7 +642,7 @@ plot_grid_commensals <- function() {
   }
   
   epithelial_layer_plot <- epithelial_layer %>%
-    select(x, y, type) %>%
+    dplyr::select(x, y, type) %>%
     mutate(alpha_val = 1)
   
   agent_plot_df <- bind_rows(
@@ -684,9 +708,9 @@ plot_grid_resting <- function() {
   )
   
   agent_plot_df <- bind_rows(
-    epithelial_layer %>% select(x, y, type),
-    phagocytes_plot %>% select(x, y, type),
-    tregs_plot %>% select(x, y, type)
+    epithelial_layer %>% dplyr::select(x, y, type),
+    phagocytes_plot %>% dplyr::select(x, y, type),
+    tregs_plot %>% dplyr::select(x, y, type)
   ) %>%
     mutate(type = factor(type, levels = all_types))
   

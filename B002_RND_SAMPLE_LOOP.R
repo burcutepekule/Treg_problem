@@ -135,6 +135,10 @@ max_level_injury          = 5
 cc_phagocyte              = 5
 digestion_time            = 3
 
+## logistic function
+k_in  = 0.044
+x0_in = 50
+
 saveRDS(parameters_df,paste0(dir_name,'/parameters_df_',core_index,'.rds'))
 
 for (realization_ind in 1:num_realizations){
@@ -258,9 +262,6 @@ for (realization_ind in 1:num_realizations){
       # Update injury site
       injury_site_updated = which(epithelium$level_injury>0)
       
-      # Update DAMPs
-      DAMPs[1,] = DAMPs[1,] + epithelium$level_injury*add_DAMPs
-      
       # Update SAMPs based on activated tregs
       active_tregs = which(treg_phenotype == 1)
       if(length(active_tregs) > 0) {
@@ -276,14 +277,6 @@ for (realization_ind in 1:num_realizations){
           ROS[phagocyte_y[i], phagocyte_x[i]] = ROS[phagocyte_y[i], phagocyte_x[i]] + phagocyte_activity_ROS[i] * add_ROS
         }
       }
-      
-      # Diffuse & decay DAMPs, SAMPs, and ROS.
-      DAMPs   = diffuse_matrix(DAMPs, diffusion_speed_DAMPs, max_cell_value_DAMPs)
-      SAMPs   = diffuse_matrix(SAMPs, diffusion_speed_SAMPs, max_cell_value_SAMPs)
-      ROS     = diffuse_matrix(ROS, diffusion_speed_ROS, max_cell_value_ROS)
-      DAMPs   = DAMPs - DAMPs_decay*DAMPs
-      SAMPs   = SAMPs - SAMPs_decay*SAMPs
-      ROS     = ROS - ros_decay*ROS
       
       # Move pathogens and commensals randomly (optimized for matrices)
       if(nrow(pathogen_coords) > 0) {
@@ -313,17 +306,41 @@ for (realization_ind in 1:num_realizations){
         commensal_coords[, "y"] = pmin(pmax(commensal_coords[, "y"] + dy, 1), grid_size)   
       }
       
-      # Move phagocytes and tregs based on DAMPs gradient
-      density_matrix_tregs      = DAMPs # here you can choose another density matrix if you like
-      if(randomize_tregs==1){
-        density_matrix_tregs = matrix(0,grid_size,grid_size)
+      # Pre-calculate pathogen counts touching epithelium (y=1) for each x position
+      pathogen_epithelium_counts = rep(0, grid_size)
+      if(nrow(pathogen_coords) > 0) {
+        epithelium_pathogens = pathogen_coords[pathogen_coords[, "y"] == 1, , drop = FALSE]
+        if(nrow(epithelium_pathogens) > 0) {
+          pathogen_epithelium_counts = tabulate(epithelium_pathogens[, "x"], nbins = grid_size)
+        }
       }
-      density_matrix_phagocytes = DAMPs
       
-      all_equal_treg            = all(density_matrix_tregs == density_matrix_tregs[1, 1])
-      all_equal_phagocytes      = all(density_matrix_phagocytes == density_matrix_phagocytes[1, 1])
+      # Pre-calculate commensal counts touching epithelium (y=1) for each x position
+      commensal_epithelium_counts = rep(0, grid_size)
+      if(nrow(commensal_coords) > 0) {
+        epithelium_commensals = commensal_coords[commensal_coords[, "y"] == 1, , drop = FALSE]
+        if(nrow(epithelium_commensals) > 0) {
+          commensal_epithelium_counts = tabulate(epithelium_commensals[, "x"], nbins = grid_size)
+        }
+      }
       
-      if(!all_equal_treg){ 
+      # Update DAMPs
+      DAMPs[1,] = DAMPs[1,] + epithelium$level_injury*add_DAMPs
+      DAMPs[1,] = DAMPs[1,] + 1*logistic_scaled_0_to_5_quantized(pathogen_epithelium_counts+commensal_epithelium_counts)*add_DAMPs
+      
+      # Diffuse & decay DAMPs, SAMPs, and ROS.
+      DAMPs   = diffuse_matrix(DAMPs, diffusion_speed_DAMPs, max_cell_value_DAMPs)
+      SAMPs   = diffuse_matrix(SAMPs, diffusion_speed_SAMPs, max_cell_value_SAMPs)
+      ROS     = diffuse_matrix(ROS, diffusion_speed_ROS, max_cell_value_ROS)
+      DAMPs   = DAMPs - DAMPs_decay*DAMPs
+      SAMPs   = SAMPs - SAMPs_decay*SAMPs
+      ROS     = ROS - ros_decay*ROS
+      
+      # Move phagocytes and tregs based on DAMPs gradient
+      density_matrix = DAMPs # here you can choose another density matrix if you like
+      all_equal      = all(density_matrix == density_matrix[1, 1])
+      
+      if(!all_equal){ 
         # Move tregs
         ##### move_agents_vectors_gradient  ######################################## 
         for(i in 1:length(treg_x)) {
@@ -339,7 +356,7 @@ for (realization_ind in 1:num_realizations){
           neighbors_y = rep(y_range, times = length(x_range))
           
           # Get density values for those cells (vectorized)
-          neighbor_densities = density_matrix_tregs[cbind(neighbors_y, neighbors_x)]
+          neighbor_densities = density_matrix[cbind(neighbors_y, neighbors_x)]
           
           # Normalize to get probabilities
           total = sum(neighbor_densities)
@@ -356,19 +373,8 @@ for (realization_ind in 1:num_realizations){
           treg_x[i] = neighbors_x[chosen_idx]
           treg_y[i] = neighbors_y[chosen_idx]
         }
-      } else {
-        # Random movement when no gradient 
-        dy_treg = ifelse(treg_y == 1,
-                         sample(c(1), size = length(treg_y), replace = TRUE),
-                         sample(c(-1, 0, 1), size = length(treg_y), replace = TRUE))
-        dx_treg = iszero_coordinates(dy_treg)# dx sampled conditionally to avoid (0,0)
-        # Update positions with boundary constraints 
-        treg_x = pmin(pmax(treg_x + dx_treg, 1), grid_size)
-        treg_y = pmin(pmax(treg_y + dy_treg, 1), grid_size)
-      }
-      ###############################################################################
-      
-      if(!all_equal_phagocytes){ 
+        ###############################################################################
+        
         # Move all phagocytes
         for(i in 1:length(phagocyte_x)){
           x = phagocyte_x[i]
@@ -383,7 +389,7 @@ for (realization_ind in 1:num_realizations){
           neighbors_y = rep(y_range, times = length(x_range))
           
           # Get density values for those cells (vectorized)
-          neighbor_densities = density_matrix_phagocytes[cbind(neighbors_y, neighbors_x)]
+          neighbor_densities = density_matrix[cbind(neighbors_y, neighbors_x)]
           
           # Normalize to get probabilities
           total = sum(neighbor_densities)
@@ -400,8 +406,19 @@ for (realization_ind in 1:num_realizations){
           phagocyte_x[i] = neighbors_x[chosen_idx]
           phagocyte_y[i] = neighbors_y[chosen_idx]
         }
+        
       } else {
         # Random movement when no gradient 
+        # tregs
+        dy_treg = ifelse(treg_y == 1,
+                         sample(c(1), size = length(treg_y), replace = TRUE),
+                         sample(c(-1, 0, 1), size = length(treg_y), replace = TRUE))
+        dx_treg = iszero_coordinates(dy_treg)# dx sampled conditionally to avoid (0,0)
+        # Update positions with boundary constraints 
+        treg_x = pmin(pmax(treg_x + dx_treg, 1), grid_size)
+        treg_y = pmin(pmax(treg_y + dy_treg, 1), grid_size)
+        
+        # All phagocytes
         dy_phagocyte = ifelse(phagocyte_y == 1,
                               sample(c(1), size = length(phagocyte_y), replace = TRUE),
                               sample(c(-1, 0, 1), size = length(phagocyte_y), replace = TRUE))
@@ -410,7 +427,6 @@ for (realization_ind in 1:num_realizations){
         phagocyte_x = pmin(pmax(phagocyte_x + dx_phagocyte, 1), grid_size)
         phagocyte_y = pmin(pmax(phagocyte_y + dy_phagocyte, 1), grid_size)
       }
-      
       
       # Add new microbes based on the injured epithelium
       n_pathogens_lp_new = round(mean(epithelium$level_injury) * rate_leak_pathogen_injury * length(injury_site_updated))
@@ -448,7 +464,7 @@ for (realization_ind in 1:num_realizations){
         commensal_coords = rbind(commensal_coords, new_commensal_coords)
         last_id_commensal = last_id_commensal + total_new_commensals
       }
-      
+
       # Update the phagocyte phenotypes
       # Vectorized operations where possible
       M0_indices = which(phagocyte_phenotype == 0)
@@ -686,25 +702,7 @@ for (realization_ind in 1:num_realizations){
         }
       }
       
-      # Pre-calculate pathogen counts touching epithelium (y=1) for each x position
-      pathogen_epithelium_counts = rep(0, grid_size)
-      if(nrow(pathogen_coords) > 0) {
-        epithelium_pathogens = pathogen_coords[pathogen_coords[, "y"] == 1, , drop = FALSE]
-        if(nrow(epithelium_pathogens) > 0) {
-          pathogen_epithelium_counts = tabulate(epithelium_pathogens[, "x"], nbins = grid_size)
-        }
-      }
-      
-      # Pre-calculate commensal counts touching epithelium (y=1) for each x position
-      commensal_epithelium_counts = rep(0, grid_size)
-      if(nrow(commensal_coords) > 0) {
-        epithelium_commensals = commensal_coords[commensal_coords[, "y"] == 1, , drop = FALSE]
-        if(nrow(epithelium_commensals) > 0) {
-          commensal_epithelium_counts = tabulate(epithelium_commensals[, "x"], nbins = grid_size)
-        }
-      }
-      
-      # Kill epithelium with ROS
+      # Injur epithelium with pathogens / commensals
       for(i in 1:nrow(epithelium)) {
         px = epithelium$x[i]
         
@@ -713,13 +711,10 @@ for (realization_ind in 1:num_realizations){
         ros_values = ROS[1, x_coordinates]  # Row right below epithelium
         mean_ros = mean(ros_values)
         
-        # RULE 1a: Increase level_injury based on pathogen count
+        # Increase level_injury based on pathogen count
         count_pathogens = pathogen_epithelium_counts[px]
-        epithelium$level_injury[i] = epithelium$level_injury[i] + round(log(count_pathogens + 1))
-        
-        # RULE 1b: Increase level_injury based on pathogen count - BECAUSE IT'S BASOLATERAL!
-        count_commensals = commensal_epithelium_counts[px]
-        epithelium$level_injury[i] = epithelium$level_injury[i] + round(log(count_commensals + 1))
+        # epithelium$level_injury[i] = epithelium$level_injury[i] + round(log(count_pathogens + 1))
+        epithelium$level_injury[i] = epithelium$level_injury[i] + logistic_scaled_0_to_5_quantized(count_pathogens)
         
         # RULE 2: Increase level_injury based on ROS
         if(mean_ros > th_ROS_epith_recover) {
@@ -741,8 +736,8 @@ for (realization_ind in 1:num_realizations){
       # Phenotype counting
       phagocyte_counts = c(
         sum(phagocyte_phenotype == 0),  # M0
-        tabulate(phagocyte_active_age[phagocyte_phenotype == 1] + 1, cc_phagocyte+1),  # M1 by level
-        tabulate(phagocyte_active_age[phagocyte_phenotype == 2] + 1, cc_phagocyte+1)   # M2 by level  
+        tabulate(phagocyte_active_age[phagocyte_phenotype == 1] + 1, 6),  # M1 by level
+        tabulate(phagocyte_active_age[phagocyte_phenotype == 2] + 1, 6)   # M2 by level  
       )
       macrophages_longitudinal[t, ] = phagocyte_counts
       

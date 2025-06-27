@@ -44,7 +44,6 @@ rate_leak_commensal_baseline   = 0.05
 rat_com_pat_threshold          = 0.95 # if this is low, too much deactivation
 th_ROS_microbe                 = 0.10 # above this, will kill the microbe
 th_ROS_epith_recover           = th_ROS_microbe+0.20 # above this, will kill the epithelial cell
-active_age_limit               = 5
 epith_recovery_chance          = 0.25 #  % change to recover when level of ROS is low enough
 treg_vicinity_effect           = 1 # if 0, that means has to be at the very same pixel
 
@@ -56,8 +55,8 @@ grid_size            = 25
 n_phagocytes         = 200
 n_tregs              = 200
 cc_phagocyte         = 5 # number of time steps before the last bacteria is fully digested
-rounds_active        = 2*cc_phagocyte
 digestion_time       = 3
+active_age_limit     = 5
 
 injury_percentage = 60
 injury_site       = get_middle_percent(seq(1,grid_size), injury_percentage)
@@ -742,9 +741,4 @@ p_epithelium = plot_faceted(longitudinal_df_keep,
                             "Epithelial Cell Dynamics")
 
 print(p_epithelium)
-
-p_microbes   = plot_faceted(longitudinal_df_keep, c("commensal", "pathogen"),
-                            "Microbe Dynamics")
-
-print(p_microbes)
 

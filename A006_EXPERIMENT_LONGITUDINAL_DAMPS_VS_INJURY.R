@@ -35,7 +35,7 @@ placeholder = nullGrob()
 ##### NEED TO IMPLEMENT AGE FOR ALL CELLS! INCLUDING EPITHELIUM!
 #### HOW TO ATTRACT T CELLS TO DCS?
 
-t_max      = 5000
+t_max      = 500
 plot_on    = 0
 plot_every = 100 # plot_evey n frames
 
@@ -103,6 +103,9 @@ activity_engulf_M1_step   = (activity_engulf_max-activity_engulf_M1_baseline)/cc
 activity_engulf_M2_step   = (activity_engulf_max-activity_engulf_M2_baseline)/cc_phagocyte
 activity_ROS_M1_step      = (activity_ROS_max-activity_ROS_M1_baseline)/cc_phagocyte
 
+max_level_injury           = 5
+max_level_basolateral_PRR  = 5
+
 scenarios_df = expand.grid(
   sterile = c(0, 1),
   allow_tregs_to_do_their_job = c(FALSE, TRUE),
@@ -134,10 +137,7 @@ for (scenario_ind in 1:nrow(scenarios_df)){
   epithelium  = data.frame(x = seq(1,grid_size,1),
                            y = rep(0, grid_size),
                            level_injury = 0, id = seq(1,grid_size))
-  
-  epithelium[injury_site,]$level_injury = 1 # start with 1
-  max_level_injury = 5
-  
+
   #phagocytes
   phagocyte_x = sample(1:grid_size, n_phagocytes, TRUE)
   phagocyte_y = sample(2:grid_size, n_phagocytes, TRUE) 
@@ -182,7 +182,6 @@ for (scenario_ind in 1:nrow(scenarios_df)){
   last_id_pathogen  = n_pathogens_lp
   last_id_commensal = n_commensals_lp
   
-  
   pathogens_killed_by_ROS = 0
   pathogens_killed_by_Mac = rep(0,3)
   
@@ -197,13 +196,38 @@ for (scenario_ind in 1:nrow(scenarios_df)){
   tregs_longitudinal       = matrix(0,nrow=t_max, ncol=2) # two phenotypes, active and resting
   microbes_cumdeath_longitudinal = matrix(0,nrow=t_max, ncol=2*4) # first 4 columns commensals, second 4 columns pathogens - death by ROS, M0, M1, M2
   
+  # Pre-calculate pathogen counts touching epithelium (y=1) for each x position
+  pathogen_epithelium_counts = rep(0, grid_size)
+  if(nrow(pathogen_coords) > 0) {
+    epithelium_pathogens = pathogen_coords[pathogen_coords[, "y"] == 1, , drop = FALSE]
+    if(nrow(epithelium_pathogens) > 0) {
+      pathogen_epithelium_counts = tabulate(epithelium_pathogens[, "x"], nbins = grid_size)
+    }
+  }
+  
+  # Pre-calculate commensal counts touching epithelium (y=1) for each x position
+  commensal_epithelium_counts = rep(0, grid_size)
+  if(nrow(commensal_coords) > 0) {
+    epithelium_commensals = commensal_coords[commensal_coords[, "y"] == 1, , drop = FALSE]
+    if(nrow(epithelium_commensals) > 0) {
+      commensal_epithelium_counts = tabulate(epithelium_commensals[, "x"], nbins = grid_size)
+    }
+  }
+  
+  # Calculate DAMPs based on injury and PRR 
+  
+  epithelium[injury_site,]$level_injury = 1 # start with 1
+  
   for (t in 1:t_max) {
     
     # Update injury site
     injury_site_updated = which(epithelium$level_injury>0)
     
-    # Update DAMPs
+    # Update DAMPs based on injury
     DAMPs[1,] = DAMPs[1,] + epithelium$level_injury*add_DAMPs
+    
+    # # Update DAMPs based on PRR
+    DAMPs[1,] = DAMPs[1,] + log(commensal_epithelium_counts+pathogen_epithelium_counts+1)*add_DAMPs
     
     # Update SAMPs based on activated tregs
     active_tregs = which(treg_phenotype == 1)
@@ -387,19 +411,19 @@ for (scenario_ind in 1:nrow(scenarios_df)){
     }
     
   
-    if(plot_on==1 & (t%%plot_every == 0 | t==1)){
-      ########### PLOT HERE TO BETTER UNDERSTAND LOCALIZATION!
-      source('./CONVERT_TO_DATAFRAME.R')
-      p = plot_simtime_simple()
-      ggsave(
-        paste0(dir_name,"/frame_seed_",seed_in,"_STERILE_",sterile,"_TREGS_",allow_tregs_to_do_their_job,"_COGNATE_",allow_tregs_to_suppress_cognate,"_",t,".png"),
-        plot = p,
-        width = 12,
-        height = 10,
-        dpi = 600,
-        bg = "white"  # =--- important to avoid black background in video
-      )
-    }
+    # if(plot_on==1 & (t%%plot_every == 0 | t==1)){
+    #   ########### PLOT HERE TO BETTER UNDERSTAND LOCALIZATION!
+    #   source('./CONVERT_TO_DATAFRAME.R')
+    #   p = plot_simtime_simple()
+    #   ggsave(
+    #     paste0(dir_name,"/frame_seed_",seed_in,"_STERILE_",sterile,"_TREGS_",allow_tregs_to_do_their_job,"_COGNATE_",allow_tregs_to_suppress_cognate,"_",t,".png"),
+    #     plot = p,
+    #     width = 12,
+    #     height = 10,
+    #     dpi = 600,
+    #     bg = "white"  # =--- important to avoid black background in video
+    #   )
+    # }
 
     # Update the phagocyte phenotypes
     # Vectorized operations where possible
@@ -638,25 +662,7 @@ for (scenario_ind in 1:nrow(scenarios_df)){
       }
     }
     
-    # Pre-calculate pathogen counts touching epithelium (y=1) for each x position
-    pathogen_epithelium_counts = rep(0, grid_size)
-    if(nrow(pathogen_coords) > 0) {
-      epithelium_pathogens = pathogen_coords[pathogen_coords[, "y"] == 1, , drop = FALSE]
-      if(nrow(epithelium_pathogens) > 0) {
-        pathogen_epithelium_counts = tabulate(epithelium_pathogens[, "x"], nbins = grid_size)
-      }
-    }
-    
-    # Pre-calculate commensal counts touching epithelium (y=1) for each x position
-    commensal_epithelium_counts = rep(0, grid_size)
-    if(nrow(commensal_coords) > 0) {
-      epithelium_commensals = commensal_coords[commensal_coords[, "y"] == 1, , drop = FALSE]
-      if(nrow(epithelium_commensals) > 0) {
-        commensal_epithelium_counts = tabulate(epithelium_commensals[, "x"], nbins = grid_size)
-      }
-    }
-    
-    # Kill epithelium with ROS
+    # Kill epithelium with pathogens / commensals 
     for(i in 1:nrow(epithelium)) {
       px = epithelium$x[i]
       
@@ -669,10 +675,10 @@ for (scenario_ind in 1:nrow(scenarios_df)){
       count_pathogens = pathogen_epithelium_counts[px]
       epithelium$level_injury[i] = epithelium$level_injury[i] + round(log(count_pathogens + 1))
       
-      # RULE 1b: Increase level_injury based on pathogen count - BECAUSE IT'S BASOLATERAL!
-      count_commensals = commensal_epithelium_counts[px]
-      epithelium$level_injury[i] = epithelium$level_injury[i] + round(log(count_commensals + 1))
-      
+      # # RULE 1b: Increase level_injury based on pathogen count - BECAUSE IT'S BASOLATERAL!
+      # count_commensals = commensal_epithelium_counts[px]
+      # epithelium$level_injury[i] = epithelium$level_injury[i] + round(log(count_commensals + 1))
+
       # RULE 2: Increase level_injury based on ROS
       if(mean_ros > th_ROS_epith_recover) {
         epithelium$level_injury[i] = epithelium$level_injury[i] + 1
